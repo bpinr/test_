@@ -213,6 +213,26 @@ func TestUpdateProduct_BadRequest(t *testing.T) {
 	}
 }
 
+func TestUpdateProduct_InvalidID(t *testing.T) {
+	m := mocks.NewProducts(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/products/abc",
+		strings.NewReader(`{"Name":"Bird Cage","Price":50,"Stock":2}`))
+	req = withURLParam(req, "id", "abc")
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).UpdateProduct(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+
+	body := decodeBody(t, w)
+	if body["message"] != "Product ID must be a number" {
+		t.Fatalf("unexpected message: %v", body["message"])
+	}
+}
+
 func TestUpdateProduct_Fail(t *testing.T) {
 	m := mocks.NewProducts(t)
 	// Ошибка без "not found", иначе хендлер ответит 404
@@ -277,6 +297,25 @@ func TestDeleteProduct_BadRequest(t *testing.T) {
 
 	body := decodeBody(t, w)
 	if body["message"] != "Product ID is required" {
+		t.Fatalf("unexpected message: %v", body["message"])
+	}
+}
+
+func TestDeleteProduct_InvalidID(t *testing.T) {
+	m := mocks.NewProducts(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/products/abc", nil)
+	req = withURLParam(req, "id", "abc")
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).DeleteProduct(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+
+	body := decodeBody(t, w)
+	if body["message"] != "Product ID must be a number" {
 		t.Fatalf("unexpected message: %v", body["message"])
 	}
 }

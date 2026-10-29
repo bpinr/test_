@@ -53,8 +53,8 @@ go-pet-shop/
 ## 🛠 Как запустить
 
 1. Клонировать репозиторий:
-   `git clone https://github.com/pavloging/go-pet-shop.git`
-   `cd go-pet-shop`
+   `git clone https://github.com/bpinr/test_.git`
+   `cd test_`
 
 2. Настроить окружение: скопировать `.env.example` в `.env` и поправить логин, пароль и имя базы.
 `cp .env.example .env`
@@ -71,13 +71,15 @@ go-pet-shop/
 
 Всё сразу в контейнерах: `docker compose up -d --build` (приложение берёт `config/dev.yaml`).
 
-## 🧩 Версии проекта
-В репозитории одна ветка `main`, это стартовая точка. Версии ты делаешь сам в своей копии проекта, каждую в отдельной ветке, по заданию модуля:
+## 🧩 Ветки репозитория
 
-v1 — CRUD для товаров и пользователей.
-v2 — Добавлены заказы и позиции заказа.
-v3 — Оформление заказа в транзакции.
-v4 — История заказов и аналитика (популярные товары).
+| Ветка | Что внутри |
+|---|---|
+| `main` | Стартовый код проекта, без тестов хендлеров |
+| `tests-manual` | Unit-тесты хендлеров на ручном моке |
+| `tests-mockery` | Те же тесты на моке, который генерирует mockery |
+
+Подробнее о тестовых ветках написано в разделе «🧪 Тесты HTTP-хендлеров» ниже.
 
 ---
 
@@ -88,6 +90,8 @@ Unit-тесты хендлеров `/products` лежат в `internal/handlers/
 
 Каждый хендлер (`GetAllProducts`, `CreateProduct`, `UpdateProduct`, `DeleteProduct`) покрыт сценариями:
 успех (200), битый вход (400, кроме `GetAllProducts`) и ошибка хранилища (500).
+Битый вход: некорректный JSON для `CreateProduct` и `UpdateProduct`, пустой id для `DeleteProduct`,
+нечисловой id (`abc`) для `UpdateProduct` и `DeleteProduct`.
 В каждом тесте проверяются и HTTP-статус, и тело ответа.
 
 ### Ветки `tests-manual` и `tests-mockery`
@@ -97,7 +101,7 @@ Unit-тесты хендлеров `/products` лежат в `internal/handlers/
 | Мок | `internal/handlers/product/product_mock.go`, написан руками | `internal/handlers/product/mocks/Products.go`, генерирует mockery |
 | Поведение задаётся | полями-функциями: `CreateProductFunc: func(...) {...}` | ожиданиями: `m.On("CreateProduct", ...).Return(42, nil)` |
 | Новый метод в интерфейсе | дописать метод в мок руками | перезапустить `go generate ./...` |
-| Проверка вызовов | вручную, через переменные в замыкании | `m.AssertExpectations(t)` |
+| Проверка вызовов | вручную, через переменные в замыкании | автоматически: `mocks.NewProducts(t)` сам вызывает `AssertExpectations` в конце теста |
 
 Логика тестов в обеих ветках одинаковая, отличается только способ создания мока.
 
