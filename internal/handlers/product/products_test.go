@@ -243,6 +243,31 @@ func TestUpdateProduct_BadRequest(t *testing.T) {
 	}
 }
 
+func TestUpdateProduct_InvalidID(t *testing.T) {
+	mock := &ProductsMock{
+		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
+			t.Fatal("storage must not be called with non-numeric id")
+			return nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/products/abc",
+		strings.NewReader(`{"Name":"Bird Cage","Price":50,"Stock":2}`))
+	req = withURLParam(req, "id", "abc")
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), mock).UpdateProduct(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+
+	body := decodeBody(t, w)
+	if body["message"] != "Product ID must be a number" {
+		t.Fatalf("unexpected message: %v", body["message"])
+	}
+}
+
 func TestUpdateProduct_Fail(t *testing.T) {
 	mock := &ProductsMock{
 		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
@@ -323,6 +348,30 @@ func TestDeleteProduct_BadRequest(t *testing.T) {
 
 	body := decodeBody(t, w)
 	if body["message"] != "Product ID is required" {
+		t.Fatalf("unexpected message: %v", body["message"])
+	}
+}
+
+func TestDeleteProduct_InvalidID(t *testing.T) {
+	mock := &ProductsMock{
+		DeleteProductFunc: func(ctx context.Context, id int) error {
+			t.Fatal("storage must not be called with non-numeric id")
+			return nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/products/abc", nil)
+	req = withURLParam(req, "id", "abc")
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), mock).DeleteProduct(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+
+	body := decodeBody(t, w)
+	if body["message"] != "Product ID must be a number" {
 		t.Fatalf("unexpected message: %v", body["message"])
 	}
 }
