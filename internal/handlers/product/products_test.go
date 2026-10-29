@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"go-pet-shop/internal/handlers/product/mocks"
 	"go-pet-shop/internal/models"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
+	"github.com/stretchr/testify/mock"
 )
 
 // withURLParam кладёт параметр пути (например, id) в контекст запроса,
@@ -32,26 +34,25 @@ func decodeBody(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	return body
 }
 
+// Мок создаётся через mocks.NewProducts(t): в конце теста он сам проверит,
+// что все ожидаемые вызовы были, а неожиданный вызов сразу уронит тест.
+
 // =======================
 // Get All Products
 // =======================
 
 func TestGetAllProducts_Success(t *testing.T) {
 	// Мокаем storage — он вернёт один продукт.
-	mock := &ProductsMock{
-		GetAllProductsFunc: func(ctx context.Context) ([]models.Product, error) {
-			return []models.Product{
-				{ID: 1, Name: "Dog Food"},
-			}, nil
-		},
-	}
+	m := mocks.NewProducts(t)
+	m.On("GetAllProducts", mock.Anything).
+		Return([]models.Product{{ID: 1, Name: "Dog Food"}}, nil)
 
 	// Создаем HTTP-запрос GET /products
 	req := httptest.NewRequest(http.MethodGet, "/products", nil)
 	w := httptest.NewRecorder()
 
 	// Создаем хендлер с мок-хранилищем
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 
 	// Вызываем метод GetAllProducts, который является http.HandlerFunc
 	handler.GetAllProducts(w, req)
@@ -73,17 +74,14 @@ func TestGetAllProducts_Success(t *testing.T) {
 
 func TestGetAllProducts_Error(t *testing.T) {
 	// Мокаем storage — он будет возвращать ошибку
-	mock := &ProductsMock{
-		GetAllProductsFunc: func(ctx context.Context) ([]models.Product, error) {
-			return nil, errors.New("DB error")
-		},
-	}
+	m := mocks.NewProducts(t)
+	m.On("GetAllProducts", mock.Anything).Return(nil, errors.New("DB error"))
 
 	// Создаем запрос
 	req := httptest.NewRequest(http.MethodGet, "/products", nil)
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.GetAllProducts(w, req)
 
 	// Ожидаем HTTP 500
@@ -102,27 +100,19 @@ func TestGetAllProducts_Error(t *testing.T) {
 // =======================
 
 func TestCreateProduct_Success(t *testing.T) {
-	var got models.Product
-	mock := &ProductsMock{
-		CreateProductFunc: func(ctx context.Context, product models.Product) (int, error) {
-			got = product
-			return 42, nil
-		},
-	}
+	m := mocks.NewProducts(t)
+	// Хендлер должен передать в storage ровно то, что пришло в JSON
+	m.On("CreateProduct", mock.Anything, models.Product{Name: "Cat Toy", Price: 9.99, Stock: 5}).
+		Return(42, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/products",
 		strings.NewReader(`{"Name":"Cat Toy","Price":9.99,"Stock":5}`))
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).CreateProduct(w, req)
+	New(slog.Default(), m).CreateProduct(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	// Хендлер должен передать в storage то, что пришло в JSON
-	if got.Name != "Cat Toy" || got.Price != 9.99 || got.Stock != 5 {
-		t.Fatalf("storage got unexpected product: %+v", got)
 	}
 
 	body := decodeBody(t, w)
@@ -136,17 +126,13 @@ func TestCreateProduct_Success(t *testing.T) {
 }
 
 func TestCreateProduct_BadRequest(t *testing.T) {
-	mock := &ProductsMock{
-		CreateProductFunc: func(ctx context.Context, product models.Product) (int, error) {
-			t.Fatal("storage must not be called on invalid JSON")
-			return 0, nil
-		},
-	}
+	// Ожиданий нет: если хендлер дойдёт до storage, мок уронит тест
+	m := mocks.NewProducts(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/products", strings.NewReader(`{bad json`))
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).CreateProduct(w, req)
+	New(slog.Default(), m).CreateProduct(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -159,17 +145,14 @@ func TestCreateProduct_BadRequest(t *testing.T) {
 }
 
 func TestCreateProduct_Fail(t *testing.T) {
-	mock := &ProductsMock{
-		CreateProductFunc: func(ctx context.Context, product models.Product) (int, error) {
-			return 0, errors.New("DB error")
-		},
-	}
+	m := mocks.NewProducts(t)
+	m.On("CreateProduct", mock.Anything, mock.Anything).Return(0, errors.New("DB error"))
 
 	req := httptest.NewRequest(http.MethodPost, "/products",
 		strings.NewReader(`{"Name":"Cat Toy","Price":9.99,"Stock":5}`))
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).CreateProduct(w, req)
+	New(slog.Default(), m).CreateProduct(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -186,28 +169,20 @@ func TestCreateProduct_Fail(t *testing.T) {
 // =======================
 
 func TestUpdateProduct_Success(t *testing.T) {
-	var got models.Product
-	mock := &ProductsMock{
-		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
-			got = product
-			return nil
-		},
-	}
+	m := mocks.NewProducts(t)
+	// ID должен прийти из URL, а не из тела
+	m.On("UpdateProduct", mock.Anything, models.Product{ID: 7, Name: "Bird Cage", Price: 50, Stock: 2}).
+		Return(nil)
 
 	req := httptest.NewRequest(http.MethodPut, "/products/7",
 		strings.NewReader(`{"Name":"Bird Cage","Price":50,"Stock":2}`))
 	req = withURLParam(req, "id", "7")
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).UpdateProduct(w, req)
+	New(slog.Default(), m).UpdateProduct(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	// ID должен прийти из URL, а не из тела
-	if got.ID != 7 || got.Name != "Bird Cage" {
-		t.Fatalf("storage got unexpected product: %+v", got)
 	}
 
 	body := decodeBody(t, w)
@@ -220,18 +195,13 @@ func TestUpdateProduct_Success(t *testing.T) {
 }
 
 func TestUpdateProduct_BadRequest(t *testing.T) {
-	mock := &ProductsMock{
-		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
-			t.Fatal("storage must not be called on invalid JSON")
-			return nil
-		},
-	}
+	m := mocks.NewProducts(t)
 
 	req := httptest.NewRequest(http.MethodPut, "/products/7", strings.NewReader(`{bad json`))
 	req = withURLParam(req, "id", "7")
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).UpdateProduct(w, req)
+	New(slog.Default(), m).UpdateProduct(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -244,19 +214,16 @@ func TestUpdateProduct_BadRequest(t *testing.T) {
 }
 
 func TestUpdateProduct_Fail(t *testing.T) {
-	mock := &ProductsMock{
-		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
-			// Ошибка без "not found", иначе хендлер ответит 404
-			return errors.New("DB error")
-		},
-	}
+	m := mocks.NewProducts(t)
+	// Ошибка без "not found", иначе хендлер ответит 404
+	m.On("UpdateProduct", mock.Anything, mock.Anything).Return(errors.New("DB error"))
 
 	req := httptest.NewRequest(http.MethodPut, "/products/7",
 		strings.NewReader(`{"Name":"Bird Cage","Price":50,"Stock":2}`))
 	req = withURLParam(req, "id", "7")
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).UpdateProduct(w, req)
+	New(slog.Default(), m).UpdateProduct(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -273,25 +240,17 @@ func TestUpdateProduct_Fail(t *testing.T) {
 // =======================
 
 func TestDeleteProduct_Success(t *testing.T) {
-	var gotID int
-	mock := &ProductsMock{
-		DeleteProductFunc: func(ctx context.Context, id int) error {
-			gotID = id
-			return nil
-		},
-	}
+	m := mocks.NewProducts(t)
+	m.On("DeleteProduct", mock.Anything, 3).Return(nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/products/3", nil)
 	req = withURLParam(req, "id", "3")
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).DeleteProduct(w, req)
+	New(slog.Default(), m).DeleteProduct(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	if gotID != 3 {
-		t.Fatalf("expected storage to delete id 3, got %d", gotID)
 	}
 
 	body := decodeBody(t, w)
@@ -304,18 +263,13 @@ func TestDeleteProduct_Success(t *testing.T) {
 }
 
 func TestDeleteProduct_BadRequest(t *testing.T) {
-	mock := &ProductsMock{
-		DeleteProductFunc: func(ctx context.Context, id int) error {
-			t.Fatal("storage must not be called with empty id")
-			return nil
-		},
-	}
+	m := mocks.NewProducts(t)
 
 	// id не кладём в контекст — chi.URLParam вернёт пустую строку
 	req := httptest.NewRequest(http.MethodDelete, "/products/", nil)
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).DeleteProduct(w, req)
+	New(slog.Default(), m).DeleteProduct(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -328,17 +282,14 @@ func TestDeleteProduct_BadRequest(t *testing.T) {
 }
 
 func TestDeleteProduct_Fail(t *testing.T) {
-	mock := &ProductsMock{
-		DeleteProductFunc: func(ctx context.Context, id int) error {
-			return errors.New("DB error")
-		},
-	}
+	m := mocks.NewProducts(t)
+	m.On("DeleteProduct", mock.Anything, 3).Return(errors.New("DB error"))
 
 	req := httptest.NewRequest(http.MethodDelete, "/products/3", nil)
 	req = withURLParam(req, "id", "3")
 	w := httptest.NewRecorder()
 
-	New(slog.Default(), mock).DeleteProduct(w, req)
+	New(slog.Default(), m).DeleteProduct(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
