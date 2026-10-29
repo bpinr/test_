@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/render"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@v2.53.7 --name=Products
 type Products interface {
 	GetAllProducts(ctx context.Context) ([]models.Product, error)
 	CreateProduct(ctx context.Context, product models.Product) (int, error)

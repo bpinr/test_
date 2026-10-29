@@ -78,3 +78,58 @@ v1 — CRUD для товаров и пользователей.
 v2 — Добавлены заказы и позиции заказа.
 v3 — Оформление заказа в транзакции.
 v4 — История заказов и аналитика (популярные товары).
+
+---
+
+## 🧪 Тесты HTTP-хендлеров
+
+Unit-тесты хендлеров `/products` лежат в `internal/handlers/product/products_test.go`.
+Базу данных в них подменяет мок интерфейса `Products`, поэтому PostgreSQL для тестов не нужен.
+
+Каждый хендлер (`GetAllProducts`, `CreateProduct`, `UpdateProduct`, `DeleteProduct`) покрыт сценариями:
+успех (200), битый вход (400, кроме `GetAllProducts`) и ошибка хранилища (500).
+В каждом тесте проверяются и HTTP-статус, и тело ответа.
+
+### Ветки `tests-manual` и `tests-mockery`
+
+| | `tests-manual` | `tests-mockery` |
+|---|---|---|
+| Мок | `internal/handlers/product/product_mock.go`, написан руками | `internal/handlers/product/mocks/Products.go`, генерирует mockery |
+| Поведение задаётся | полями-функциями: `CreateProductFunc: func(...) {...}` | ожиданиями: `m.On("CreateProduct", ...).Return(42, nil)` |
+| Новый метод в интерфейсе | дописать метод в мок руками | перезапустить `go generate ./...` |
+| Проверка вызовов | вручную, через переменные в замыкании | `m.AssertExpectations(t)` |
+
+Логика тестов в обеих ветках одинаковая, отличается только способ создания мока.
+
+### Как запустить тесты
+
+```bash
+go test ./...
+```
+
+Подробный вывод по каждому тесту: `go test ./internal/handlers/product/ -v`.
+
+### Как перегенерировать моки (ветка `tests-mockery`)
+
+Над интерфейсом `Products` в `internal/handlers/product/products.go` стоит директива:
+
+```go
+//go:generate go run github.com/vektra/mockery/v2@v2.53.7 --name=Products
+```
+
+Перегенерировать мок после изменения интерфейса:
+
+```bash
+go generate ./...
+```
+
+Mockery устанавливать отдельно не нужно, `go run` скачает нужную версию сам.
+
+### Линтер
+
+```bash
+task linter
+```
+
+Нужен golangci-lint 2.x, собранный под вашу версию Go (для Go 1.27 подходит 2.15+):
+`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`.
